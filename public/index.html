@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Simple WebRTC + Socket.io Video Chat</title>
+<title>ProjectPQ Study Room</title>
 <style>
   body {
     font-family: sans-serif;
@@ -10,63 +10,106 @@
     color: #eee;
     text-align: center;
     padding: 20px;
+    margin: 0;
   }
-  video {
-    width: 45%;
-    max-width: 500px;
-    background: #000;
-    border-radius: 8px;
-    margin: 10px;
-  }
-  #controls, #join-screen {
-    margin-top: 20px;
-  }
+  #join-screen { margin-top: 40px; }
   input, button {
     padding: 8px 12px;
     font-size: 16px;
     margin: 5px;
   }
-  #chat-log {
-    max-width: 500px;
+
+  /* Video grid — this is what handles 3 to 30 participants
+     without a hand-built layout. It just wraps as needed. */
+  #video-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    padding: 10px;
+  }
+  .participant-tile {
+    position: relative;
+    width: 220px;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+  }
+  /* Highlight whoever is currently speaking — important at
+     30-person scale so people can tell who's talking. */
+  .participant-tile.speaking {
+    border-color: #4ade80;
+  }
+  .participant-tile video {
+    width: 100%;
+    display: block;
+  }
+  .participant-name {
+    position: absolute;
+    bottom: 4px;
+    left: 6px;
+    background: rgba(0,0,0,0.6);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  #controls {
+    margin-top: 15px;
+    position: sticky;
+    bottom: 0;
+    background: #111;
+    padding: 10px;
+  }
+
+  #chat-panel {
+    max-width: 400px;
     margin: 20px auto;
     text-align: left;
     background: #222;
     padding: 10px;
     border-radius: 8px;
+  }
+  #chat-log {
     height: 150px;
     overflow-y: auto;
+    margin-bottom: 8px;
   }
 </style>
 </head>
 <body>
 
-  <h2>Simple WebRTC + Socket.io Video Chat</h2>
+  <h2>ProjectPQ Study Room</h2>
 
-  <!-- Step 1: user enters a room ID to "call" someone.
-       Both people must enter the SAME room ID to connect. -->
+  <!-- Step 1: enter room name + your name. In production, name
+       comes from your logged-in student session, not a text box. -->
   <div id="join-screen">
-    <input id="room-input" placeholder="Enter room ID (e.g. test123)" />
-    <button id="join-btn">Join Call</button>
+    <input id="room-input" placeholder="Room name (e.g. gse101-study)" />
+    <input id="name-input" placeholder="Your name" />
+    <button id="join-btn">Join Room</button>
   </div>
 
-  <!-- Video elements: one for your own camera, one for the other person -->
-  <div id="video-container" style="display:none;">
-    <video id="local-video" autoplay playsinline muted></video>
-    <video id="remote-video" autoplay playsinline></video>
+  <div id="room-screen" style="display:none;">
+    <div id="video-grid"></div>
 
     <div id="controls">
       <button id="mute-btn">Mute</button>
       <button id="camera-btn">Camera Off</button>
-      <button id="hangup-btn">Hang Up</button>
+      <button id="leave-btn">Leave Room</button>
     </div>
 
-    <div id="chat-log"></div>
-    <input id="chat-input" placeholder="Type a message..." />
-    <button id="chat-send-btn">Send</button>
+    <div id="chat-panel">
+      <div id="chat-log"></div>
+      <input id="chat-input" placeholder="Type a message..." />
+      <button id="chat-send-btn">Send</button>
+    </div>
   </div>
 
-  <!-- Socket.io client library, served automatically by the socket.io server -->
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="/client.js"></script>
+  <!-- LiveKit's client SDK, loaded as an ES module from a CDN.
+       For production you'd typically install it via npm and bundle
+       it with your frontend build tool instead, but a CDN import
+       keeps this demo dependency-free on the frontend. -->
+  <script type="module" src="/client.js"></script>
 </body>
 </html>

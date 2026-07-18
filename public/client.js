@@ -1,221 +1,223 @@
 // ============================================================
-// client.js
+// client.js  (ES Module — loaded via <script type="module">)
 // -----------------------------------------------------------
-// This file has two jobs:
-//   1. Talk to the Socket.io server (signaling)
-//   2. Set up the actual WebRTC peer connection (the real
-//      video/audio stream, which goes directly browser-to-browser)
+// This replaces ALL the hand-rolled RTCPeerConnection / ICE /
+// offer-answer code from the first demo. LiveKit's client SDK
+// handles the entire WebRTC connection lifecycle internally —
+// we just tell it which room to join and render whatever
+// tracks it hands us.
 // ============================================================
+
+import {
+  Room,
+  RoomEvent,
+  Track,
+  createLocalTracks,
+} from "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs";
 
 // -------------------- DOM references --------------------
 const joinScreen = document.getElementById("join-screen");
-const videoContainer = document.getElementById("video-container");
+const roomScreen = document.getElementById("room-screen");
 const roomInput = document.getElementById("room-input");
+const nameInput = document.getElementById("name-input");
 const joinBtn = document.getElementById("join-btn");
-const localVideo = document.getElementById("local-video");
-const remoteVideo = document.getElementById("remote-video");
+const videoGrid = document.getElementById("video-grid");
 const muteBtn = document.getElementById("mute-btn");
 const cameraBtn = document.getElementById("camera-btn");
-const hangupBtn = document.getElementById("hangup-btn");
+const leaveBtn = document.getElementById("leave-btn");
 const chatLog = document.getElementById("chat-log");
 const chatInput = document.getElementById("chat-input");
 const chatSendBtn = document.getElementById("chat-send-btn");
 
-// -------------------- State --------------------
-let socket; // socket.io connection
-let localStream; // our own camera/mic stream
-let peerConnection; // the WebRTC connection to the other person
-let roomId;
-
-// STUN servers help each browser discover its public-facing
-// network address so peers can find each other. These are free
-// public Google STUN servers — fine for development/testing.
-// NOTE: for production, especially with users on mobile data or
-// restrictive networks (common for students on campus wifi),
-// you will ALSO need a TURN server, or some calls will fail to
-// connect. STUN alone is not enough in the real world.
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
-};
+let room; // the LiveKit Room instance for this session
+let isMuted = false;
+let isCameraOff = false;
 
 // ============================================================
 // STEP 1: Join a room
 // ============================================================
 joinBtn.addEventListener("click", async () => {
-  roomId = roomInput.value.trim();
-  if (!roomId) {
-    alert("Please enter a room ID");
+  const roomName = roomInput.value.trim();
+  const participantName = nameInput.value.trim();
+
+  if (!roomName || !participantName) {
+    alert("Please enter both a room name and your name");
     return;
   }
 
-  // Ask the browser for camera + mic access.
-  // This will pop up a permission prompt.
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
+    // Ask OUR OWN backend for a LiveKit access token. Our server
+    // signs this using the API secret, which never touches the
+    // browser — the browser only ever sees the short-lived token.
+    const res = await fetch("/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomName, participantName }),
     });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Failed to get access token");
+    }
+
+    const { token, url } = await res.json();
+    await joinLiveKitRoom(url, token);
   } catch (err) {
-    alert("Could not access camera/microphone: " + err.message);
-    return;
+    alert("Could not join room: " + err.message);
+    console.error(err);
   }
-
-  localVideo.srcObject = localStream;
-
-  // Switch UI from "join screen" to "in-call screen"
-  joinScreen.style.display = "none";
-  videoContainer.style.display = "block";
-
-  // Now connect to the signaling server
-  connectSocket();
 });
 
 // ============================================================
-// STEP 2: Connect to Socket.io and set up signaling listeners
+// STEP 2: Connect to the LiveKit room
 // ============================================================
-function connectSocket() {
-  socket = io(); // connects to the same host that served this page
-
-  socket.on("connect", () => {
-    console.log("Connected to signaling server:", socket.id);
-    socket.emit("join-room", roomId);
+async function joinLiveKitRoom(url, token) {
+  room = new Room({
+    // Automatically adjusts received video quality per-subscriber
+    // based on bandwidth and tile size — critical for a 30-person
+    // room so someone on weak wifi doesn't get 29 full-res streams.
+    adaptiveStream: true,
+    // Reduces publishing bandwidth/CPU by only encoding what's needed
+    dynacast: true,
   });
 
-  socket.on("room-full", () => {
-    alert("This room already has 2 people. Try a different room ID.");
+  // ---------------- Event listeners ----------------
+
+  // Fired whenever ANY participant's track (ours or someone else's)
+  // becomes available to render.
+  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    renderTrack(track, participant);
   });
 
-  // Fired on the FIRST person's browser when a SECOND person joins.
-  // The first person becomes the "caller" and starts the offer.
-  socket.on("user-joined", async () => {
-    console.log("Another user joined — creating offer...");
-    await createPeerConnection();
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-
-    socket.emit("offer", { roomId, offer });
+  room.on(RoomEvent.TrackUnsubscribed, (track) => {
+    track.detach().forEach((el) => el.remove());
   });
 
-  // Fired on the SECOND person's browser when they receive the offer.
-  socket.on("offer", async ({ offer }) => {
-    console.log("Received offer — creating answer...");
-    await createPeerConnection();
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    socket.emit("answer", { roomId, answer });
+  // A participant joined/left — keep the grid accurate even for
+  // participants who haven't published a track yet (e.g. audio-only,
+  // or camera still initializing).
+  room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+    removeParticipantTile(participant.identity);
   });
 
-  // Fired on the FIRST person's browser once the second person answers.
-  socket.on("answer", async ({ answer }) => {
-    console.log("Received answer — connection should establish now");
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+  // Highlights whoever is currently talking — very useful once
+  // you're past a handful of tiles.
+  room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+    document
+      .querySelectorAll(".participant-tile")
+      .forEach((el) => el.classList.remove("speaking"));
+
+    speakers.forEach((speaker) => {
+      const tile = document.getElementById(`tile-${speaker.identity}`);
+      if (tile) tile.classList.add("speaking");
+    });
   });
 
-  // ICE candidates are potential network paths (IP/port combos)
-  // that WebRTC discovers over time. Both sides trade these until
-  // they find a path that works between them.
-  socket.on("ice-candidate", async ({ candidate }) => {
-    try {
-      if (candidate) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      }
-    } catch (err) {
-      console.error("Error adding received ICE candidate", err);
-    }
+  // In-call chat, sent over LiveKit's built-in data channel —
+  // no separate Socket.io connection needed for this anymore.
+  room.on(RoomEvent.DataReceived, (payload, participant) => {
+    const message = new TextDecoder().decode(payload);
+    addChatMessage(`${participant.identity}: ${message}`);
   });
 
-  // The other person disconnected — clean up on our side too
-  socket.on("user-left", () => {
-    console.log("Other user left the call");
-    remoteVideo.srcObject = null;
-    if (peerConnection) {
-      peerConnection.close();
-      peerConnection = null;
-    }
+  room.on(RoomEvent.Disconnected, () => {
+    console.log("Disconnected from room");
   });
 
-  // Simple chat messages, using the same emit/on pattern
-  socket.on("chat-message", ({ message }) => {
-    addChatMessage("Them: " + message);
+  // ---------------- Connect ----------------
+  await room.connect(url, token);
+  console.log("Connected to room:", room.name);
+
+  // Publish our own camera + mic
+  await room.localParticipant.enableCameraAndMicrophone();
+
+  // Render our own local video tile too
+  room.localParticipant.videoTrackPublications.forEach((pub) => {
+    if (pub.track) renderTrack(pub.track, room.localParticipant);
   });
+
+  joinScreen.style.display = "none";
+  roomScreen.style.display = "block";
 }
 
 // ============================================================
-// STEP 3: Create the actual WebRTC peer connection
+// Rendering helpers
 // ============================================================
-async function createPeerConnection() {
-  peerConnection = new RTCPeerConnection(ICE_SERVERS);
 
-  // Add our own camera/mic tracks to the connection so the
-  // other person can receive them.
-  localStream.getTracks().forEach((track) => {
-    peerConnection.addTrack(track, localStream);
-  });
+// Creates (or reuses) a video/audio tile for a participant and
+// attaches the given track to it.
+function renderTrack(track, participant) {
+  const tileId = `tile-${participant.identity}`;
+  let tile = document.getElementById(tileId);
 
-  // Fired whenever WebRTC finds a new possible network path.
-  // We forward it to the other peer via the signaling server.
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("ice-candidate", { roomId, candidate: event.candidate });
-    }
-  };
+  if (!tile) {
+    tile = document.createElement("div");
+    tile.id = tileId;
+    tile.className = "participant-tile";
 
-  // Fired when we start receiving the OTHER person's video/audio.
-  peerConnection.ontrack = (event) => {
-    remoteVideo.srcObject = event.streams[0];
-  };
+    const nameLabel = document.createElement("div");
+    nameLabel.className = "participant-name";
+    nameLabel.textContent = participant.identity;
+    tile.appendChild(nameLabel);
 
-  // Useful for debugging connection issues
-  peerConnection.onconnectionstatechange = () => {
-    console.log("Connection state:", peerConnection.connectionState);
-  };
+    videoGrid.appendChild(tile);
+  }
+
+  // track.attach() returns an <audio> or <video> element already
+  // wired up to play this track — we just insert it into the DOM.
+  const el = track.attach();
+  if (track.kind === Track.Kind.Video) {
+    tile.insertBefore(el, tile.firstChild);
+  } else {
+    // Audio tracks don't need to be visible, just present so they play
+    el.style.display = "none";
+    tile.appendChild(el);
+  }
+}
+
+function removeParticipantTile(identity) {
+  const tile = document.getElementById(`tile-${identity}`);
+  if (tile) tile.remove();
 }
 
 // ============================================================
-// Call controls: mute / camera toggle / hang up
+// Controls: mute / camera / leave
 // ============================================================
-let isMuted = false;
-muteBtn.addEventListener("click", () => {
+muteBtn.addEventListener("click", async () => {
   isMuted = !isMuted;
-  localStream.getAudioTracks().forEach((track) => (track.enabled = !isMuted));
+  await room.localParticipant.setMicrophoneEnabled(!isMuted);
   muteBtn.textContent = isMuted ? "Unmute" : "Mute";
 });
 
-let isCameraOff = false;
-cameraBtn.addEventListener("click", () => {
+cameraBtn.addEventListener("click", async () => {
   isCameraOff = !isCameraOff;
-  localStream.getVideoTracks().forEach((track) => (track.enabled = !isCameraOff));
+  await room.localParticipant.setCameraEnabled(!isCameraOff);
   cameraBtn.textContent = isCameraOff ? "Camera On" : "Camera Off";
 });
 
-hangupBtn.addEventListener("click", () => {
-  if (peerConnection) peerConnection.close();
-  if (socket) socket.disconnect();
-  localStream.getTracks().forEach((track) => track.stop());
-  location.reload(); // simplest way to fully reset the demo
+leaveBtn.addEventListener("click", () => {
+  if (room) room.disconnect();
+  location.reload();
 });
 
-
 // ============================================================
-// Simple chat alongside the call
+// Chat over LiveKit's data channel
 // ============================================================
 chatSendBtn.addEventListener("click", sendChatMessage);
 chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendChatMessage();
 });
 
-function sendChatMessage() {
+async function sendChatMessage() {
   const message = chatInput.value.trim();
-  if (!message) return;
+  if (!message || !room) return;
 
-  socket.emit("chat-message", { roomId, message });
-  addChatMessage("You: " + message);
+  const data = new TextEncoder().encode(message);
+  // reliable: true means it uses a guaranteed-delivery channel
+  // (like TCP) rather than best-effort — appropriate for chat text.
+  await room.localParticipant.publishData(data, { reliable: true });
+
+  addChatMessage(`You: ${message}`);
   chatInput.value = "";
 }
 

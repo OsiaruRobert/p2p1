@@ -1,13 +1,16 @@
 {
-  "name": "webrtc-video-chat-demo",
+  "name": "projectpq-study-rooms",
   "version": "1.0.0",
-  "description": "Simple 1:1 video/voice chat demo using WebRTC + Socket.io signaling",
+  "description": "Scalable group video/voice study rooms (3-30 people) using LiveKit SFU + Express, ES modules",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "livekit-server-sdk": "^2.9.2"
   }
 }
