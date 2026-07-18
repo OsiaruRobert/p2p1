@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Simple WebRTC + Socket.io Video Chat</title>
+<style>
+  body {
+    font-family: sans-serif;
+    background: #111;
+    color: #eee;
+    text-align: center;
+    padding: 20px;
+  }
+  video {
+    width: 45%;
+    max-width: 500px;
+    background: #000;
+    border-radius: 8px;
+    margin: 10px;
+  }
+  #controls, #join-screen {
+    margin-top: 20px;
+  }
+  input, button {
+    padding: 8px 12px;
+    font-size: 16px;
+    margin: 5px;
+  }
+  #chat-log {
+    max-width: 500px;
+    margin: 20px auto;
+    text-align: left;
+    background: #222;
+    padding: 10px;
+    border-radius: 8px;
+    height: 150px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+  <h2>Simple WebRTC + Socket.io Video Chat</h2>
+
+  <!-- Step 1: user enters a room ID to "call" someone.
+       Both people must enter the SAME room ID to connect. -->
+  <div id="join-screen">
+    <input id="room-input" placeholder="Enter room ID (e.g. test123)" />
+    <button id="join-btn">Join Call</button>
+  </div>
+
+  <!-- Video elements: one for your own camera, one for the other person -->
+  <div id="video-container" style="display:none;">
+    <video id="local-video" autoplay playsinline muted></video>
+    <video id="remote-video" autoplay playsinline></video>
+
+    <div id="controls">
+      <button id="mute-btn">Mute</button>
+      <button id="camera-btn">Camera Off</button>
+      <button id="hangup-btn">Hang Up</button>
+    </div>
+
+    <div id="chat-log"></div>
+    <input id="chat-input" placeholder="Type a message..." />
+    <button id="chat-send-btn">Send</button>
+  </div>
+
+  <!-- Socket.io client library, served automatically by the socket.io server -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>
