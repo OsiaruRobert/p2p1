@@ -43,7 +43,7 @@ io.on("connection", (socket) => {
     }
 
     // Simple demo limit: only allow 2 people per room (1:1 call)
-    if (rooms[roomId].length >= 2) {
+    if (rooms[roomId].length >= 20) {
       socket.emit("room-full");
       return;
     }
