@@ -147,6 +147,28 @@ async function connectToLiveKit(url, token, roomName) {
     refreshMemberList();
   });
 
+  // THIS is what actually makes audio audible. LiveKit hands us each
+  // remote participant's audio track here — we attach it to a hidden
+  // <audio> element and add that element to the page. Without this,
+  // audio is received by the browser but never actually played.
+  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    if (track.kind !== Track.Kind.Audio) return;
+
+    const el = track.attach();
+    el.dataset.identity = participant.identity;
+    el.style.display = "none";
+
+    // If we'd already turned our own speaker off before this track
+    // arrived, respect that immediately.
+    if (!speakerOn) el.muted = true;
+
+    document.body.appendChild(el);
+  });
+
+  room.on(RoomEvent.TrackUnsubscribed, (track) => {
+    track.detach().forEach((el) => el.remove());
+  });
+
   room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
     const speakingIds = new Set(speakers.map((s) => s.identity));
     document.querySelectorAll(".member-row").forEach((row) => {
