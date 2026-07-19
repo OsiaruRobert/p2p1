@@ -1,262 +1,412 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>ProjectPQ Study Room</title>
-<style>
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #111;
-    color: #eee;
-    margin: 0;
-    padding: 20px;
-  }
-  input, button, textarea {
-    font-family: inherit;
-    font-size: 15px;
-  }
-  #app {
-    max-width: 480px;
-    margin: 0 auto;
-  }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProjectPQ Study Room</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    :root {
+      --bg: #0b0d14;
+      --surface: #161922;
+      --surface-hover: #1e2230;
+      --border: #2a2e3a;
+      --text-primary: #e2e4ea;
+      --text-secondary: #959bb0;
+      --accent: #3b82f6;
+      --success: #4ade80;
+      --danger: #f87171;
+      --shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at 20% 20%, #1a1d2e, var(--bg));
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    input, button, textarea {
+      font-family: inherit;
+      font-size: 15px;
+    }
+    #app {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px 22px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
 
-  /* ---------- Progress bar: thin strip above the header row,
-     shown only while joining/leaving. Label note under (2). ---------- */
-  #progress-bar {
-    height: 3px;
-    background: #2a2a2a;
-    border-radius: 2px;
-    overflow: hidden;
-    margin-bottom: 6px;
-    display: none;
-  }
-  #progress-bar.active { display: block; }
-  #progress-bar-fill {
-    height: 100%;
-    width: 40%;
-    background: #4ade80;
-    animation: progress-slide 1s ease-in-out infinite;
-  }
-  @keyframes progress-slide {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(250%); }
-  }
+    /* Progress bar */
+    #progress-bar {
+      height: 3px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      display: none;
+    }
+    #progress-bar.active { display: block; }
+    #progress-bar-fill {
+      height: 100%;
+      width: 40%;
+      background: linear-gradient(90deg, var(--accent), var(--success));
+      animation: progress-slide 1.4s ease-in-out infinite;
+    }
+    @keyframes progress-slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
 
-  /* ---------- (1) Room name, (2) Join/Exit, (3)+(4) count+icon ---------- */
-  #header-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    padding: 10px 12px;
-  }
-  #room-name-input {
-    flex: 1;
-    background: #111;
-    color: #eee;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 8px 10px;
-  }
-  #room-name-input:disabled {
-    color: #aaa;
-    background: #161616;
-  }
-  #member-count-badge {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 14px;
-    color: #ccc;
-    white-space: nowrap;
-  }
-  #join-exit-btn {
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  #join-exit-btn.state-join { background: #2563eb; color: #fff; }
-  #join-exit-btn.state-exit { background: #dc2626; color: #fff; }
+    /* Header row */
+    #header-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #room-name-input {
+      flex: 1;
+      background: var(--bg);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #room-name-input:focus {
+      border-color: var(--accent);
+    }
+    #room-name-input:disabled {
+      opacity: 0.6;
+      background: var(--surface-hover);
+      color: var(--text-secondary);
+    }
+    #member-count-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      white-space: nowrap;
+    }
+    #join-exit-btn {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+      letter-spacing: 0.3px;
+    }
+    #join-exit-btn.state-join {
+      background: var(--accent);
+      color: white;
+    }
+    #join-exit-btn.state-join:hover {
+      background: #2563eb;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+    }
+    #join-exit-btn.state-exit {
+      background: var(--danger);
+      color: white;
+    }
+    #join-exit-btn.state-exit:hover {
+      background: #e11d48;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(248,113,113,0.3);
+    }
+    #join-exit-btn:active {
+      transform: translateY(0);
+    }
 
-  /* ---------- (5)(6)(7) Your own controls row ---------- */
-  #own-controls {
-    display: none;
-    gap: 8px;
-    margin-top: 10px;
-  }
-  #own-controls.active { display: flex; }
-  .own-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    padding: 10px;
-    cursor: pointer;
-    color: #eee;
-  }
-  .own-btn.off { color: #f87171; border-color: #7f1d1d; }
-  .own-btn.on { color: #4ade80; border-color: #14532d; }
+    /* Own controls */
+    #own-controls {
+      display: none;
+      gap: 8px;
+    }
+    #own-controls.active { display: flex; }
+    .own-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 8px;
+      cursor: pointer;
+      color: var(--text-primary);
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .own-btn:hover {
+      background: var(--surface-hover);
+      border-color: #3e4252;
+    }
+    .own-btn.on {
+      background: #112231;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .own-btn.off {
+      background: #2d1416;
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+    .own-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+    }
 
-  /* ---------- (8) Member rows ---------- */
-  #member-list {
-    display: none;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 12px;
-  }
-  #member-list.active { display: flex; }
+    /* Member list */
+    #member-list {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #member-list.active { display: flex; }
 
-  #empty-room-invite {
-    display: none;
-    text-align: center;
-    padding: 24px 16px;
-    background: #1a1a1a;
-    border: 1px dashed #333;
-    border-radius: 8px;
-    margin-top: 12px;
-    color: #999;
-    font-size: 14px;
-  }
-  #empty-room-invite.active { display: block; }
-  #empty-room-invite button {
-    margin-top: 10px;
-    background: #2a2a2a;
-    color: #eee;
-    border: 1px solid #3a3a3a;
-    border-radius: 6px;
-    padding: 6px 14px;
-    cursor: pointer;
-  }
+    #empty-room-invite {
+      display: none;
+      text-align: center;
+      padding: 28px 20px;
+      background: var(--bg);
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #empty-room-invite.active { display: block; }
+    #empty-room-invite button {
+      margin-top: 14px;
+      background: var(--surface-hover);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 18px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #empty-room-invite button:hover {
+      background: #2a2e3a;
+    }
 
-  .member-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    padding: 10px 12px;
-  }
-  .member-info { display: flex; flex-direction: column; gap: 2px; }
-  .member-name { font-size: 14px; }
-  .member-name.speaking-name { color: #4ade80; }
-  .typing-text {
-    font-size: 11px;
-    color: #4ade80;
-    font-style: italic;
-    height: 14px;
-  }
-  .member-icons { display: flex; gap: 10px; align-items: center; }
-  .status-icon svg { width: 20px; height: 20px; display: block; }
-  .status-icon.on svg { stroke: #4ade80; }
-  .status-icon.off svg { stroke: #ef4444; }
+    .member-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      transition: border-color 0.2s;
+    }
+    .member-row:hover {
+      border-color: #4b5066;
+    }
+    .member-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .member-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      transition: color 0.2s;
+    }
+    .member-name.speaking-name {
+      color: var(--success);
+    }
+    .typing-text {
+      font-size: 12px;
+      color: var(--success);
+      font-style: italic;
+      height: 16px;
+    }
+    .member-icons {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .status-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .status-icon svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+      stroke: var(--text-secondary);
+    }
+    .status-icon.on svg {
+      stroke: var(--success);
+    }
+    .status-icon.off svg {
+      stroke: var(--danger);
+    }
+    .status-icon.speaking {
+      animation: mic-pulse 1s ease-in-out infinite;
+    }
+    @keyframes mic-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.2); background: rgba(74,222,128,0.15); }
+    }
 
-  /* Waveform pulse animation on the mic icon while that member
-     is actively speaking (label 10 note). */
-  .status-icon.speaking {
-    animation: mic-pulse 0.9s ease-in-out infinite;
-  }
-  @keyframes mic-pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.18); }
-  }
+    /* Toast */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 100;
+      width: 90%;
+      max-width: 440px;
+    }
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      box-shadow: var(--shadow);
+      animation: toast-in 0.25s ease-out;
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .toast::before {
+      content: '';
+      width: 4px;
+      border-radius: 4px;
+      background: var(--accent);
+      flex-shrink: 0;
+      align-self: stretch;
+      margin: 2px 0;
+    }
+    .toast strong {
+      font-weight: 600;
+      margin-right: 6px;
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
-  /* ---------- (13) Message toast ---------- */
-  #toast-container {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 100;
-    width: 90%;
-    max-width: 440px;
-  }
-  .toast {
-    background: #2563eb;
-    color: #fff;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 14px;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
-    animation: toast-in 0.2s ease-out;
-  }
-  .toast strong { display: block; font-size: 12px; opacity: 0.85; margin-bottom: 2px; }
-  @keyframes toast-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ---------- (14) Write-message popup ---------- */
-  #compose-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.5);
-    align-items: flex-end;
-    justify-content: center;
-    z-index: 50;
-  }
-  #compose-overlay.active { display: flex; }
-  #compose-popup {
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 12px 12px 0 0;
-    width: 100%;
-    max-width: 480px;
-    padding: 16px;
-  }
-  #compose-popup textarea {
-    width: 100%;
-    min-height: 70px;
-    resize: vertical;
-    background: #111;
-    color: #eee;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 8px;
-    margin-bottom: 10px;
-  }
-  #compose-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-  #compose-actions button {
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    cursor: pointer;
-  }
-  #compose-cancel-btn { background: #2a2a2a; color: #eee; }
-  #compose-send-btn { background: #2563eb; color: #fff; font-weight: 600; }
-</style>
+    /* Compose popup */
+    #compose-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 50;
+      backdrop-filter: blur(2px);
+    }
+    #compose-overlay.active { display: flex; }
+    #compose-popup {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-width: 480px;
+      padding: 20px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #compose-popup textarea {
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      background: var(--bg);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #compose-popup textarea:focus {
+      border-color: var(--accent);
+    }
+    #compose-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    #compose-actions button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 22px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    #compose-cancel-btn {
+      background: var(--bg);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    #compose-cancel-btn:hover {
+      background: var(--surface-hover);
+    }
+    #compose-send-btn {
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+    #compose-send-btn:hover {
+      background: #2563eb;
+      box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+    }
+  </style>
 </head>
 <body>
-
   <div id="app">
 
-    <!-- Progress indicator while joining/leaving -->
+    <!-- Progress indicator -->
     <div id="progress-bar"><div id="progress-bar-fill"></div></div>
 
-    <!-- (1) Room name, (2) Join/Exit, (3)+(4) member count + icon -->
+    <!-- Header: room name, member count, join/exit -->
     <div id="header-row">
       <input id="room-name-input" placeholder="Enter room name..." value="gse-101-study" />
       <div id="member-count-badge">
-        <!-- (4) people icon -->
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ccc" stroke-width="2">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
           <circle cx="10" cy="7" r="4" />
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -267,29 +417,43 @@
       <button id="join-exit-btn" class="state-join">Join</button>
     </div>
 
-    <!-- (5)(6)(7) Your own controls, only visible once joined -->
+    <!-- Own controls (speaker, mic, text) -->
     <div id="own-controls">
-      <button id="own-speaker-btn" class="own-btn on">🔊 Speaker</button>
-      <button id="own-mic-btn" class="own-btn on">🎙️ Mic</button>
-      <button id="own-text-btn" class="own-btn">💬 Text</button>
+      <button id="own-speaker-btn" class="own-btn on">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>
+        </svg>
+        Speaker
+      </button>
+      <button id="own-mic-btn" class="own-btn on">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+        </svg>
+        Mic
+      </button>
+      <button id="own-text-btn" class="own-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        Text
+      </button>
     </div>
 
-    <!-- (8) Member rows -->
+    <!-- Member list -->
     <div id="member-list"></div>
 
-    <!-- Empty room invite, shown when you're the only one here -->
+    <!-- Empty room invite -->
     <div id="empty-room-invite">
       No one else is here yet. Copy the room name and share it to invite others.
       <br />
       <button id="copy-room-name-btn">Copy Room Name</button>
     </div>
-
   </div>
 
-  <!-- (13) Message toasts -->
+  <!-- Toast container -->
   <div id="toast-container"></div>
 
-  <!-- (14) Write-message popup, opened by the (7) Text button -->
+  <!-- Compose overlay -->
   <div id="compose-overlay">
     <div id="compose-popup">
       <textarea id="compose-input" placeholder="Type your message..."></textarea>
@@ -300,7 +464,6 @@
     </div>
   </div>
 
-  <!-- LiveKit's client SDK, loaded as an ES module from a CDN -->
   <script type="module" src="/client.js"></script>
 </body>
 </html>
