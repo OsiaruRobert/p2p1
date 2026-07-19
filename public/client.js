@@ -1,9 +1,10 @@
 // ============================================================
-// client.js  (ES Module — loaded via <script type="module">)
+// client.js  (ES Module)
 // -----------------------------------------------------------
-// LiveKit's client SDK handles the entire WebRTC connection
-// lifecycle internally — we just tell it which room to join
-// and render whatever tracks/participants it hands us.
+// Audio + text study room. No video/screen-share in this version.
+// LiveKit still handles the actual audio connection (an SFU, so
+// this scales the same way it did for the video version) — this
+// file just wires it up to the label-by-label UI spec.
 // ============================================================
 
 import {
@@ -13,51 +14,63 @@ import {
 } from "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs";
 
 // -------------------- DOM references --------------------
-const joinScreen = document.getElementById("join-screen");
-const roomScreen = document.getElementById("room-screen");
-const roomInput = document.getElementById("room-input");
-const nameInput = document.getElementById("name-input");
-const joinBtn = document.getElementById("join-btn");
-
-const roomNameDisplay = document.getElementById("room-name-display");
-const participantCountNum = document.getElementById("participant-count-num");
+const progressBar = document.getElementById("progress-bar");
+const roomNameInput = document.getElementById("room-name-input");
+const memberCountNum = document.getElementById("member-count-num");
 const joinExitBtn = document.getElementById("join-exit-btn");
-const participantList = document.getElementById("participant-list");
 
-const videoGrid = document.getElementById("video-grid");
-const muteBtn = document.getElementById("mute-btn");
-const cameraBtn = document.getElementById("camera-btn");
-const screenShareBtn = document.getElementById("screen-share-btn");
-const screenShareContainer = document.getElementById("screen-share-container");
-const screenShareLabel = document.getElementById("screen-share-label");
+const ownControls = document.getElementById("own-controls");
+const ownSpeakerBtn = document.getElementById("own-speaker-btn");
+const ownMicBtn = document.getElementById("own-mic-btn");
+const ownTextBtn = document.getElementById("own-text-btn");
 
-const chatLog = document.getElementById("chat-log");
-const chatInput = document.getElementById("chat-input");
-const chatSendBtn = document.getElementById("chat-send-btn");
-const typingIndicator = document.getElementById("typing-indicator");
+const memberList = document.getElementById("member-list");
+const emptyRoomInvite = document.getElementById("empty-room-invite");
+const copyRoomNameBtn = document.getElementById("copy-room-name-btn");
 
-let room; // the LiveKit Room instance for this session
-let isMuted = false;
-let isCameraOff = false;
-let isScreenSharing = false;
-let typingTimeout = null; // debounce so we don't spam "typing" events
+const toastContainer = document.getElementById("toast-container");
+
+const composeOverlay = document.getElementById("compose-overlay");
+const composeInput = document.getElementById("compose-input");
+const composeCancelBtn = document.getElementById("compose-cancel-btn");
+const composeSendBtn = document.getElementById("compose-send-btn");
+
+// -------------------- State --------------------
+let room = null;
+let isJoined = false;
+let speakerOn = true; // (5) do I want to HEAR others
+let micOn = true; // (6) is my mic live
+let typingTimeout = null;
+
+// Broadcast status from other members, so we can render their (9)
+// speaker / (10) mic icons. identity -> { speakerOn, micOn }
+const remoteStatus = new Map();
+
+// A generated identity for this browser tab. In production, swap
+// this for the student's real authenticated username.
+const participantName = "student-" + Math.floor(Math.random() * 10000);
 
 // ============================================================
-// STEP 1: Join a room
+// (2) Join / Exit button
 // ============================================================
-joinBtn.addEventListener("click", async () => {
-  const roomName = roomInput.value.trim();
-  const participantName = nameInput.value.trim();
+joinExitBtn.addEventListener("click", async () => {
+  if (isJoined) {
+    await leaveRoom();
+  } else {
+    await joinRoom();
+  }
+});
 
-  if (!roomName || !participantName) {
-    alert("Please enter both a room name and your name");
+async function joinRoom() {
+  const roomName = roomNameInput.value.trim();
+  if (!roomName) {
+    alert("Please enter a room name");
     return;
   }
 
+  setProgress(true);
+
   try {
-    // Ask OUR OWN backend for a LiveKit access token. Our server
-    // signs this using the API secret, which never touches the
-    // browser — the browser only ever sees the short-lived token.
     const res = await fetch("/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -70,65 +83,83 @@ joinBtn.addEventListener("click", async () => {
     }
 
     const { token, url } = await res.json();
-    await joinLiveKitRoom(url, token, roomName);
+    await connectToLiveKit(url, token, roomName);
+
+    isJoined = true;
+    roomNameInput.disabled = true;
+    joinExitBtn.textContent = "Exit";
+    joinExitBtn.classList.remove("state-join");
+    joinExitBtn.classList.add("state-exit");
+    ownControls.classList.add("active");
+    memberList.classList.add("active");
+
+    refreshMemberList();
   } catch (err) {
     alert("Could not join room: " + err.message);
     console.error(err);
+  } finally {
+    setProgress(false);
   }
-});
+}
 
-// ============================================================
-// STEP 2: Connect to the LiveKit room
-// ============================================================
-async function joinLiveKitRoom(url, token, roomName) {
-  room = new Room({
-    // Automatically adjusts received video quality per-subscriber
-    // based on bandwidth and tile size — critical for a large
-    // room so someone on weak wifi doesn't get everyone's full-res feed.
-    adaptiveStream: true,
-    // Reduces publishing bandwidth/CPU by only encoding what's needed
-    dynacast: true,
-  });
-
-  // ---------------- Event listeners ----------------
-
-  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-    renderTrack(track, participant);
-  });
-
-  room.on(RoomEvent.TrackUnsubscribed, (track) => {
-    track.detach().forEach((el) => el.remove());
-    if (track.source === Track.Source.ScreenShare) {
-      screenShareContainer.style.display = "none";
-      screenShareLabel.textContent = "";
+async function leaveRoom() {
+  setProgress(true);
+  try {
+    if (room) {
+      room.disconnect();
+      room = null;
     }
+  } finally {
+    isJoined = false;
+    roomNameInput.disabled = false;
+    joinExitBtn.textContent = "Join";
+    joinExitBtn.classList.remove("state-exit");
+    joinExitBtn.classList.add("state-join");
+    ownControls.classList.remove("active");
+    memberList.classList.remove("active");
+    memberList.innerHTML = "";
+    memberCountNum.textContent = "0";
+    remoteStatus.clear();
+    emptyRoomInvite.classList.remove("active");
+    setProgress(false);
+  }
+}
+
+function setProgress(active) {
+  progressBar.classList.toggle("active", active);
+}
+
+// ============================================================
+// LiveKit connection
+// ============================================================
+async function connectToLiveKit(url, token, roomName) {
+  room = new Room();
+
+  room.on(RoomEvent.ParticipantConnected, (participant) => {
+    // Send our current status directly to the newcomer, since data
+    // messages sent before they connected wouldn't have reached them.
+    sendStatus([participant.identity]);
+    refreshMemberList();
   });
 
-  // Keep the participant list + count in sync as people come and go
-  room.on(RoomEvent.ParticipantConnected, () => refreshParticipantList());
   room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-    removeParticipantTile(participant.identity);
-    refreshParticipantList();
+    remoteStatus.delete(participant.identity);
+    refreshMemberList();
   });
 
-  // Highlights whoever is currently talking — both on video tiles
-  // and in the participant list.
   room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
     const speakingIds = new Set(speakers.map((s) => s.identity));
-
-    document.querySelectorAll(".participant-tile").forEach((el) => {
-      el.classList.toggle("speaking", speakingIds.has(el.dataset.identity));
-    });
-    document.querySelectorAll(".participant-row").forEach((el) => {
-      el.querySelector(".p-name").classList.toggle(
-        "speaking",
-        speakingIds.has(el.dataset.identity)
+    document.querySelectorAll(".member-row").forEach((row) => {
+      const identity = row.dataset.identity;
+      row.querySelector(".member-name").classList.toggle(
+        "speaking-name",
+        speakingIds.has(identity)
       );
+      const micIcon = row.querySelector(".mic-icon");
+      if (micIcon) micIcon.classList.toggle("speaking", speakingIds.has(identity));
     });
   });
 
-  // Chat + typing indicator both travel over LiveKit's data channel.
-  // We tag each payload with a "type" so we can tell them apart.
   room.on(RoomEvent.DataReceived, (payload, participant) => {
     let data;
     try {
@@ -137,309 +168,247 @@ async function joinLiveKitRoom(url, token, roomName) {
       return;
     }
 
-    if (data.type === "chat") {
-      addChatMessage(participant.identity, data.message);
+    if (data.type === "status") {
+      remoteStatus.set(participant.identity, {
+        speakerOn: data.speakerOn,
+        micOn: data.micOn,
+      });
+      refreshMemberList();
     } else if (data.type === "typing") {
-      showTypingIndicator(participant.identity);
+      showTyping(participant.identity);
+    } else if (data.type === "chat") {
+      showToast(participant.identity, data.message);
     }
   });
 
-  room.on(RoomEvent.Disconnected, () => {
-    console.log("Disconnected from room");
-  });
-
-  // Browsers give the user their OWN native "Stop sharing" button.
-  // If they use that instead of our in-app button, this keeps our
-  // UI in sync.
-  room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
-    if (publication.source === Track.Source.ScreenShare) {
-      isScreenSharing = false;
-      screenShareBtn.textContent = "Share Screen";
-      screenShareContainer.style.display = "none";
-      screenShareLabel.textContent = "";
-    }
-  });
-
-  // Mic mute state changes (ours or others') should refresh the
-  // little mic icon in the participant list.
-  room.on(RoomEvent.TrackMuted, () => refreshParticipantList());
-  room.on(RoomEvent.TrackUnmuted, () => refreshParticipantList());
-
-  // ---------------- Connect ----------------
   await room.connect(url, token);
-  console.log("Connected to room:", room.name);
 
-  roomNameDisplay.textContent = roomName;
+  // Publish mic only — no camera in this version.
+  await room.localParticipant.setMicrophoneEnabled(true);
 
-  // Publish our own camera + mic
-  await room.localParticipant.enableCameraAndMicrophone();
-
-  // Render our own local video tile too
-  room.localParticipant.videoTrackPublications.forEach((pub) => {
-    if (pub.track) renderTrack(pub.track, room.localParticipant);
-  });
-
-  refreshParticipantList();
-
-  joinScreen.style.display = "none";
-  roomScreen.classList.add("active");
+  // Tell everyone already in the room our starting status.
+  await sendStatus();
 }
 
 // ============================================================
-// Participant list panel — name + per-row speaker/mic controls
+// (5) Own speaker toggle — controls whether YOU hear others.
+// Muting locally mutes every remote participant's audio element;
+// it does not affect what anyone else hears.
 // ============================================================
+ownSpeakerBtn.addEventListener("click", () => {
+  speakerOn = !speakerOn;
+  ownSpeakerBtn.textContent = speakerOn ? "🔊 Speaker" : "🔇 Speaker";
+  ownSpeakerBtn.classList.toggle("on", speakerOn);
+  ownSpeakerBtn.classList.toggle("off", !speakerOn);
 
-// Tracks which remote participants we've locally muted (mute-for-me
-// only — does not affect what anyone else hears).
-const locallyMutedIdentities = new Set();
+  room?.remoteParticipants.forEach((participant) => {
+    participant.audioTrackPublications.forEach((pub) => {
+      pub.track?.attachedElements.forEach((el) => {
+        el.muted = !speakerOn;
+      });
+    });
+  });
 
-function refreshParticipantList() {
+  sendStatus();
+});
+
+// ============================================================
+// (6) Own mic toggle — real mute of your published microphone.
+// ============================================================
+ownMicBtn.addEventListener("click", async () => {
+  micOn = !micOn;
+  await room.localParticipant.setMicrophoneEnabled(micOn);
+  ownMicBtn.textContent = micOn ? "🎙️ Mic" : "🔈🚫 Mic";
+  ownMicBtn.classList.toggle("on", micOn);
+  ownMicBtn.classList.toggle("off", !micOn);
+  sendStatus();
+});
+
+// Broadcasts our current speaker/mic status. Pass specific
+// identities to send only to them (used for newcomers); otherwise
+// broadcasts to everyone in the room.
+async function sendStatus(destinationIdentities) {
+  if (!room) return;
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({ type: "status", speakerOn, micOn })
+  );
+  const opts = { reliable: true };
+  if (destinationIdentities) opts.destinationIdentities = destinationIdentities;
+  await room.localParticipant.publishData(bytes, opts);
+}
+
+// ============================================================
+// (8) Member rows — everyone except yourself, per the sketch
+// (your own status lives in the (5)(6)(7) control row instead)
+// ============================================================
+function refreshMemberList() {
   if (!room) return;
 
-  const all = [room.localParticipant, ...room.remoteParticipants.values()];
-  participantCountNum.textContent = all.length;
+  const remoteParticipants = [...room.remoteParticipants.values()];
+  const totalCount = remoteParticipants.length + 1; // + yourself
+  memberCountNum.textContent = totalCount;
 
-  participantList.innerHTML = "";
+  memberList.innerHTML = "";
 
-  all.forEach((participant) => {
-    const isLocal = participant === room.localParticipant;
-    const row = document.createElement("div");
-    row.className = "participant-row";
-    row.dataset.identity = participant.identity;
-
-    const nameEl = document.createElement("div");
-    nameEl.className = "p-name";
-    nameEl.textContent = participant.identity + (isLocal ? " (you)" : "");
-    row.appendChild(nameEl);
-
-    const controls = document.createElement("div");
-    controls.className = "row-controls";
-
-    // Speaker icon: mute THEIR audio, just for you. Doesn't apply
-    // to your own row — muting yourself is what the mic icon does.
-    if (!isLocal) {
-      const speakerBtn = document.createElement("button");
-      speakerBtn.className = "icon-toggle";
-      const isLocallyMuted = locallyMutedIdentities.has(participant.identity);
-      speakerBtn.textContent = isLocallyMuted ? "🔇" : "🔊";
-      speakerBtn.title = isLocallyMuted ? "Unmute for me" : "Mute for me";
-      speakerBtn.addEventListener("click", () => {
-        toggleLocalMuteForParticipant(participant);
-      });
-      controls.appendChild(speakerBtn);
-    }
-
-    // Mic icon: shows whether THIS person's mic is currently on.
-    // On your own row, clicking it toggles your real mic (same
-    // action as the main Mute button below).
-    const micBtn = document.createElement("button");
-    micBtn.className = "icon-toggle";
-    const micTrackPub = [...participant.audioTrackPublications.values()].find(
-      (pub) => pub.source === Track.Source.Microphone
-    );
-    const micIsOn = micTrackPub ? !micTrackPub.isMuted : false;
-    micBtn.textContent = micIsOn ? "🎙️" : "🔈🚫";
-    micBtn.title = isLocal
-      ? micIsOn
-        ? "Mute your mic"
-        : "Unmute your mic"
-      : micIsOn
-      ? "Mic is on"
-      : "Mic is off";
-
-    if (isLocal) {
-      micBtn.addEventListener("click", () => muteBtn.click());
-    } else {
-      micBtn.disabled = true; // read-only indicator for remote participants
-      micBtn.style.cursor = "default";
-    }
-    controls.appendChild(micBtn);
-
-    row.appendChild(controls);
-    participantList.appendChild(row);
-  });
-}
-
-// Mutes/unmutes a remote participant's audio locally, by muting the
-// actual <audio> element their track is attached to. This does NOT
-// affect what other participants hear — only your own browser.
-function toggleLocalMuteForParticipant(participant) {
-  const identity = participant.identity;
-  const isCurrentlyMuted = locallyMutedIdentities.has(identity);
-
-  participant.audioTrackPublications.forEach((pub) => {
-    if (pub.track) {
-      pub.track.attachedElements.forEach((el) => {
-        el.muted = !isCurrentlyMuted;
-      });
-    }
-  });
-
-  if (isCurrentlyMuted) {
-    locallyMutedIdentities.delete(identity);
-  } else {
-    locallyMutedIdentities.add(identity);
-  }
-  refreshParticipantList();
-}
-
-// ============================================================
-// Video / screen-share rendering
-// ============================================================
-function renderTrack(track, participant) {
-  if (track.source === Track.Source.ScreenShare) {
-    renderScreenShare(track, participant);
+  if (remoteParticipants.length === 0) {
+    emptyRoomInvite.classList.add("active");
     return;
   }
+  emptyRoomInvite.classList.remove("active");
 
-  const tileId = `tile-${participant.identity}`;
-  let tile = document.getElementById(tileId);
+  remoteParticipants.forEach((participant) => {
+    const status = remoteStatus.get(participant.identity) || {
+      speakerOn: true,
+      micOn: true,
+    };
 
-  if (!tile) {
-    tile = document.createElement("div");
-    tile.id = tileId;
-    tile.className = "participant-tile";
-    tile.dataset.identity = participant.identity;
+    const row = document.createElement("div");
+    row.className = "member-row";
+    row.dataset.identity = participant.identity;
 
-    const nameLabel = document.createElement("div");
-    nameLabel.className = "participant-name";
-    nameLabel.textContent = participant.identity;
-    tile.appendChild(nameLabel);
+    const info = document.createElement("div");
+    info.className = "member-info";
 
-    videoGrid.appendChild(tile);
-  }
+    const nameEl = document.createElement("div");
+    nameEl.className = "member-name";
+    nameEl.textContent = participant.identity; // (12)
+    info.appendChild(nameEl);
 
-  const el = track.attach();
-  if (track.kind === Track.Kind.Video) {
-    tile.insertBefore(el, tile.firstChild);
-  } else {
-    el.style.display = "none";
-    // Respect an existing local mute-for-me choice if one was made
-    // before this track arrived (e.g. reconnect scenario).
-    if (locallyMutedIdentities.has(participant.identity)) {
-      el.muted = true;
-    }
-    tile.appendChild(el);
-  }
+    const typingEl = document.createElement("div");
+    typingEl.className = "typing-text";
+    typingEl.dataset.role = "typing"; // (11)
+    info.appendChild(typingEl);
+
+    row.appendChild(info);
+
+    const icons = document.createElement("div");
+    icons.className = "member-icons";
+    icons.appendChild(makeStatusIcon("speaker", status.speakerOn)); // (9)
+    icons.appendChild(makeStatusIcon("mic", status.micOn)); // (10)
+    row.appendChild(icons);
+
+    memberList.appendChild(row);
+  });
 }
 
-function renderScreenShare(track, participant) {
-  const el = track.attach();
-  screenShareLabel.textContent = `${participant.identity} is sharing their screen`;
+// Builds the green-on / red-slash-off SVG status icon described
+// in labels (9) and (10).
+function makeStatusIcon(kind, isOn) {
+  const wrapper = document.createElement("span");
+  wrapper.className = `status-icon ${isOn ? "on" : "off"}${kind === "mic" ? " mic-icon" : ""}`;
 
-  const existingVideo = screenShareContainer.querySelector("video");
-  if (existingVideo) existingVideo.remove();
+  const speakerPath = `<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>`;
+  const speakerOffPath = `<path d="M11 5 6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>`;
+  const micPath = `<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>`;
+  const micOffPath = `<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="1" y1="1" x2="23" y2="23"/>`;
 
-  screenShareContainer.appendChild(el);
-  screenShareContainer.style.display = "block";
+  let inner;
+  if (kind === "speaker") inner = isOn ? speakerPath : speakerOffPath;
+  else inner = isOn ? micPath : micOffPath;
+
+  wrapper.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+  return wrapper;
 }
 
-function removeParticipantTile(identity) {
-  const tile = document.getElementById(`tile-${identity}`);
-  if (tile) tile.remove();
+// ============================================================
+// (7) Text button -> opens (14) the write-message popup
+// ============================================================
+ownTextBtn.addEventListener("click", () => {
+  composeOverlay.classList.add("active");
+  composeInput.value = "";
+  composeInput.focus();
+});
+
+composeCancelBtn.addEventListener("click", closeCompose);
+
+function closeCompose() {
+  composeOverlay.classList.remove("active");
 }
 
-// ============================================================
-// Controls: mute / camera / screen share / join-exit
-// ============================================================
-muteBtn.addEventListener("click", async () => {
-  isMuted = !isMuted;
-  await room.localParticipant.setMicrophoneEnabled(!isMuted);
-  muteBtn.textContent = isMuted ? "Unmute" : "Mute";
-  refreshParticipantList();
-});
-
-cameraBtn.addEventListener("click", async () => {
-  isCameraOff = !isCameraOff;
-  await room.localParticipant.setCameraEnabled(!isCameraOff);
-  cameraBtn.textContent = isCameraOff ? "Camera On" : "Camera Off";
-});
-
-screenShareBtn.addEventListener("click", async () => {
-  try {
-    isScreenSharing = !isScreenSharing;
-
-    if (isScreenSharing) {
-      await room.localParticipant.setScreenShareEnabled(true, { audio: true });
-      screenShareBtn.textContent = "Stop Sharing";
-
-      room.localParticipant.videoTrackPublications.forEach((pub) => {
-        if (pub.source === Track.Source.ScreenShare && pub.track) {
-          renderScreenShare(pub.track, room.localParticipant);
-        }
-      });
-    } else {
-      await room.localParticipant.setScreenShareEnabled(false);
-      screenShareBtn.textContent = "Share Screen";
-      screenShareContainer.style.display = "none";
-      screenShareLabel.textContent = "";
-    }
-  } catch (err) {
-    console.warn("Screen share cancelled or failed:", err);
-    isScreenSharing = false;
-    screenShareBtn.textContent = "Share Screen";
-  }
-});
-
-// Header's Join/Exit button — since you're already in the room by
-// the time this screen shows, this button's job is to leave.
-joinExitBtn.addEventListener("click", () => {
-  if (room) room.disconnect();
-  location.reload();
-});
-
-// ============================================================
-// Chat + typing indicator, both over LiveKit's data channel
-// ============================================================
-chatSendBtn.addEventListener("click", sendChatMessage);
-chatInput.addEventListener("keydown", (e) => {
+composeSendBtn.addEventListener("click", sendMessage);
+composeInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    sendChatMessage();
+    sendMessage();
   }
 });
 
-// Broadcast a lightweight "typing" signal as the user types,
-// throttled so we're not sending an event on every keystroke.
-chatInput.addEventListener("input", () => {
-  if (typingTimeout) return; // already sent one recently, skip
+// While typing in (14), broadcast a lightweight "typing" signal so
+// this member's row shows the (11) typing indicator to others.
+composeInput.addEventListener("input", () => {
+  if (typingTimeout) return; // throttle so we're not spamming events
   sendData({ type: "typing" });
   typingTimeout = setTimeout(() => {
     typingTimeout = null;
   }, 2000);
 });
 
-async function sendChatMessage() {
-  const message = chatInput.value.trim();
+async function sendMessage() {
+  const message = composeInput.value.trim();
   if (!message || !room) return;
 
   await sendData({ type: "chat", message });
-  addChatMessage("You", message);
-  chatInput.value = "";
+  showToast("You", message);
+  closeCompose();
 }
 
 async function sendData(data) {
   const bytes = new TextEncoder().encode(JSON.stringify(data));
-  // reliable: true = guaranteed delivery, appropriate for chat text
-  // and typing signals (small, infrequent messages).
   await room.localParticipant.publishData(bytes, { reliable: true });
 }
 
-function addChatMessage(sender, message) {
-  const p = document.createElement("p");
-  const strong = document.createElement("strong");
-  strong.textContent = sender + ": ";
-  p.appendChild(strong);
-  p.appendChild(document.createTextNode(message));
-  chatLog.appendChild(p);
-  chatLog.scrollTop = chatLog.scrollHeight;
+// ============================================================
+// (11) Typing indicator on a specific member's row
+// ============================================================
+const typingTimers = new Map();
+function showTyping(identity) {
+  const row = document.querySelector(`.member-row[data-identity="${identity}"]`);
+  if (!row) return;
+  const typingEl = row.querySelector('[data-role="typing"]');
+  if (!typingEl) return;
+
+  typingEl.textContent = "typing...";
+
+  clearTimeout(typingTimers.get(identity));
+  typingTimers.set(
+    identity,
+    setTimeout(() => {
+      typingEl.textContent = "";
+    }, 2500)
+  );
 }
 
-let typingIndicatorTimeout = null;
-function showTypingIndicator(identity) {
-  typingIndicator.textContent = `${identity} is typing...`;
-  clearTimeout(typingIndicatorTimeout);
-  typingIndicatorTimeout = setTimeout(() => {
-    typingIndicator.textContent = "";
-  }, 2500);
+// ============================================================
+// (13) Message toast
+// ============================================================
+function showToast(sender, message) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `<strong>${escapeHtml(sender)}</strong>${escapeHtml(message)}`;
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, 4000);
 }
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============================================================
+// Empty-room invite: copy room name to clipboard
+// ============================================================
+copyRoomNameBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(roomNameInput.value.trim());
+    copyRoomNameBtn.textContent = "Copied!";
+    setTimeout(() => {
+      copyRoomNameBtn.textContent = "Copy Room Name";
+    }, 1500);
+  } catch {
+    alert("Could not copy automatically — room name: " + roomNameInput.value.trim());
+  }
+});

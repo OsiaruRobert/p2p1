@@ -12,263 +12,295 @@
     margin: 0;
     padding: 20px;
   }
-  #join-screen { text-align: center; margin-top: 60px; }
   input, button, textarea {
-    padding: 8px 12px;
-    font-size: 15px;
-    margin: 5px;
     font-family: inherit;
+    font-size: 15px;
   }
-  button {
-    cursor: pointer;
-    background: #2a2a2a;
-    color: #eee;
-    border: 1px solid #3a3a3a;
-    border-radius: 6px;
-  }
-  button:hover { background: #3a3a3a; }
-
-  /* ---------- Overall two-column layout: room on the left,
-     chat on the right — matches the sketch's split. ---------- */
-  #room-screen {
-    display: none;
-    max-width: 1100px;
+  #app {
+    max-width: 480px;
     margin: 0 auto;
-    gap: 20px;
-    grid-template-columns: 1fr 340px;
-  }
-  #room-screen.active { display: grid; }
-
-  /* ---------- Left side: room header + participants + video ---------- */
-  #room-main {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
   }
 
-  #room-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    padding: 10px 14px;
-  }
-  #room-header .room-name { font-size: 15px; color: #aaa; }
-  #room-header .room-name strong { color: #fff; }
-  #participant-count {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    color: #ccc;
-  }
-
-  /* ---------- Participant list: name + per-row controls ---------- */
-  #participant-list {
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
+  /* ---------- Progress bar: thin strip above the header row,
+     shown only while joining/leaving. Label note under (2). ---------- */
+  #progress-bar {
+    height: 3px;
+    background: #2a2a2a;
+    border-radius: 2px;
     overflow: hidden;
-  }
-  .participant-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 14px;
-    border-bottom: 1px solid #2a2a2a;
-  }
-  .participant-row:last-child { border-bottom: none; }
-  .participant-row .p-name {
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .participant-row .p-name.speaking { color: #4ade80; }
-  .row-controls { display: flex; gap: 10px; }
-  .icon-toggle {
-    background: none;
-    border: none;
-    font-size: 18px;
-    cursor: pointer;
-    padding: 2px 4px;
-    line-height: 1;
-  }
-  .icon-toggle.muted { opacity: 0.4; }
-
-  /* ---------- Video grid + screen share (unchanged behavior) ---------- */
-  #video-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
-  }
-  #screen-share-container {
+    margin-bottom: 6px;
     display: none;
-    background: #000;
-    border-radius: 8px;
-    overflow: hidden;
   }
-  #screen-share-container video { width: 100%; display: block; }
-  #screen-share-label {
-    background: #222;
-    padding: 4px 10px;
-    font-size: 13px;
-    text-align: left;
+  #progress-bar.active { display: block; }
+  #progress-bar-fill {
+    height: 100%;
+    width: 40%;
+    background: #4ade80;
+    animation: progress-slide 1s ease-in-out infinite;
   }
-  .participant-tile {
-    position: relative;
-    width: 200px;
-    background: #000;
-    border-radius: 8px;
-    overflow: hidden;
-    border: 2px solid transparent;
-  }
-  .participant-tile.speaking { border-color: #4ade80; }
-  .participant-tile video { width: 100%; display: block; }
-  .participant-name {
-    position: absolute;
-    bottom: 4px;
-    left: 6px;
-    background: rgba(0,0,0,0.6);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 12px;
+  @keyframes progress-slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
   }
 
-  #controls {
+  /* ---------- (1) Room name, (2) Join/Exit, (3)+(4) count+icon ---------- */
+  #header-row {
     display: flex;
-    gap: 8px;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  /* ---------- Right side: chat panel, matching the sketch's
-     "message" display box + "write message" + send box ---------- */
-  #chat-panel {
-    display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 10px;
     background: #1a1a1a;
     border: 1px solid #2a2a2a;
     border-radius: 8px;
-    overflow: hidden;
-    height: fit-content;
+    padding: 10px 12px;
   }
-  #chat-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    border-bottom: 1px solid #2a2a2a;
-  }
-  #chat-header h3 { margin: 0; font-size: 14px; color: #aaa; font-weight: 600; }
-  #typing-indicator {
-    font-size: 12px;
-    color: #4ade80;
-    font-style: italic;
-    height: 16px;
-  }
-  #chat-log {
-    height: 260px;
-    overflow-y: auto;
-    padding: 10px 14px;
-    font-size: 14px;
-  }
-  #chat-log p { margin: 0 0 8px 0; line-height: 1.4; }
-  #chat-log p strong { color: #7dd3fc; }
-  #chat-compose {
-    border-top: 1px solid #2a2a2a;
-    padding: 10px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  #chat-compose label {
-    font-size: 12px;
-    color: #888;
-  }
-  #chat-input {
-    width: 100%;
-    resize: vertical;
-    min-height: 60px;
+  #room-name-input {
+    flex: 1;
     background: #111;
     color: #eee;
     border: 1px solid #333;
     border-radius: 6px;
-    margin: 0;
+    padding: 8px 10px;
   }
-  #chat-send-btn {
-    align-self: flex-end;
+  #room-name-input:disabled {
+    color: #aaa;
+    background: #161616;
+  }
+  #member-count-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    color: #ccc;
+    white-space: nowrap;
+  }
+  #join-exit-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #join-exit-btn.state-join { background: #2563eb; color: #fff; }
+  #join-exit-btn.state-exit { background: #dc2626; color: #fff; }
+
+  /* ---------- (5)(6)(7) Your own controls row ---------- */
+  #own-controls {
+    display: none;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  #own-controls.active { display: flex; }
+  .own-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    color: #eee;
+  }
+  .own-btn.off { color: #f87171; border-color: #7f1d1d; }
+  .own-btn.on { color: #4ade80; border-color: #14532d; }
+
+  /* ---------- (8) Member rows ---------- */
+  #member-list {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  #member-list.active { display: flex; }
+
+  #empty-room-invite {
+    display: none;
+    text-align: center;
+    padding: 24px 16px;
+    background: #1a1a1a;
+    border: 1px dashed #333;
+    border-radius: 8px;
+    margin-top: 12px;
+    color: #999;
+    font-size: 14px;
+  }
+  #empty-room-invite.active { display: block; }
+  #empty-room-invite button {
+    margin-top: 10px;
+    background: #2a2a2a;
+    color: #eee;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+
+  .member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .member-info { display: flex; flex-direction: column; gap: 2px; }
+  .member-name { font-size: 14px; }
+  .member-name.speaking-name { color: #4ade80; }
+  .typing-text {
+    font-size: 11px;
+    color: #4ade80;
+    font-style: italic;
+    height: 14px;
+  }
+  .member-icons { display: flex; gap: 10px; align-items: center; }
+  .status-icon svg { width: 20px; height: 20px; display: block; }
+  .status-icon.on svg { stroke: #4ade80; }
+  .status-icon.off svg { stroke: #ef4444; }
+
+  /* Waveform pulse animation on the mic icon while that member
+     is actively speaking (label 10 note). */
+  .status-icon.speaking {
+    animation: mic-pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes mic-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.18); }
+  }
+
+  /* ---------- (13) Message toast ---------- */
+  #toast-container {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+    width: 90%;
+    max-width: 440px;
+  }
+  .toast {
     background: #2563eb;
-    border-color: #2563eb;
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    animation: toast-in 0.2s ease-out;
   }
-  #chat-send-btn:hover { background: #1d4ed8; }
+  .toast strong { display: block; font-size: 12px; opacity: 0.85; margin-bottom: 2px; }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---------- (14) Write-message popup ---------- */
+  #compose-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 50;
+  }
+  #compose-overlay.active { display: flex; }
+  #compose-popup {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px 12px 0 0;
+    width: 100%;
+    max-width: 480px;
+    padding: 16px;
+  }
+  #compose-popup textarea {
+    width: 100%;
+    min-height: 70px;
+    resize: vertical;
+    background: #111;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+  #compose-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  #compose-actions button {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  #compose-cancel-btn { background: #2a2a2a; color: #eee; }
+  #compose-send-btn { background: #2563eb; color: #fff; font-weight: 600; }
 </style>
 </head>
 <body>
 
-  <!-- Step 1: enter room name + your name. In production, name
-       comes from your logged-in student session, not a text box. -->
-  <div id="join-screen">
-    <h2>ProjectPQ Study Room</h2>
-    <input id="room-input" placeholder="Room name (e.g. gse101-study)" />
-    <input id="name-input" placeholder="Your name" />
-    <button id="join-btn">Join Room</button>
-  </div>
+  <div id="app">
 
-  <div id="room-screen">
+    <!-- Progress indicator while joining/leaving -->
+    <div id="progress-bar"><div id="progress-bar-fill"></div></div>
 
-    <!-- ============ LEFT: room header, participants, video ============ -->
-    <div id="room-main">
-
-      <div id="room-header">
-        <div class="room-name">Current Room: <strong id="room-name-display"></strong></div>
-        <div id="participant-count">👪 <span id="participant-count-num">0</span></div>
-        <button id="join-exit-btn">Exit</button>
+    <!-- (1) Room name, (2) Join/Exit, (3)+(4) member count + icon -->
+    <div id="header-row">
+      <input id="room-name-input" placeholder="Enter room name..." value="gse-101-study" />
+      <div id="member-count-badge">
+        <!-- (4) people icon -->
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ccc" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+          <circle cx="10" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+        <span id="member-count-num">0</span>
       </div>
-
-      <!-- Participant list: name + per-person mute-for-me (speaker)
-           and mic status/self-mute toggle -->
-      <div id="participant-list"></div>
-
-      <!-- Shown only while someone is sharing their screen -->
-      <div id="screen-share-container">
-        <div id="screen-share-label"></div>
-      </div>
-
-      <div id="video-grid"></div>
-
-      <div id="controls">
-        <button id="mute-btn">Mute</button>
-        <button id="camera-btn">Camera Off</button>
-        <button id="screen-share-btn">Share Screen</button>
-      </div>
+      <button id="join-exit-btn" class="state-join">Join</button>
     </div>
 
-    <!-- ============ RIGHT: chat panel ============ -->
-    <div id="chat-panel">
-      <div id="chat-header">
-        <h3>Message</h3>
-        <span id="typing-indicator"></span>
-      </div>
+    <!-- (5)(6)(7) Your own controls, only visible once joined -->
+    <div id="own-controls">
+      <button id="own-speaker-btn" class="own-btn on">🔊 Speaker</button>
+      <button id="own-mic-btn" class="own-btn on">🎙️ Mic</button>
+      <button id="own-text-btn" class="own-btn">💬 Text</button>
+    </div>
 
-      <div id="chat-log"></div>
+    <!-- (8) Member rows -->
+    <div id="member-list"></div>
 
-      <div id="chat-compose">
-        <label for="chat-input">Write message</label>
-        <textarea id="chat-input" placeholder="Something you want to send to people..."></textarea>
-        <button id="chat-send-btn">Send</button>
-      </div>
+    <!-- Empty room invite, shown when you're the only one here -->
+    <div id="empty-room-invite">
+      No one else is here yet. Copy the room name and share it to invite others.
+      <br />
+      <button id="copy-room-name-btn">Copy Room Name</button>
     </div>
 
   </div>
 
-  <!-- LiveKit's client SDK, loaded as an ES module from a CDN.
-       For production you'd typically install it via npm and bundle
-       it with your frontend build tool instead, but a CDN import
-       keeps this demo dependency-free on the frontend. -->
+  <!-- (13) Message toasts -->
+  <div id="toast-container"></div>
+
+  <!-- (14) Write-message popup, opened by the (7) Text button -->
+  <div id="compose-overlay">
+    <div id="compose-popup">
+      <textarea id="compose-input" placeholder="Type your message..."></textarea>
+      <div id="compose-actions">
+        <button id="compose-cancel-btn">Cancel</button>
+        <button id="compose-send-btn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LiveKit's client SDK, loaded as an ES module from a CDN -->
   <script type="module" src="/client.js"></script>
 </body>
 </html>
