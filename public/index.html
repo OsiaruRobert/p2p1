@@ -28,6 +28,27 @@
     justify-content: center;
     padding: 10px;
   }
+
+  /* The shared screen gets its own large area above the camera
+     grid, since that's what people expect when someone presents. */
+  #screen-share-container {
+    display: none;
+    max-width: 900px;
+    margin: 0 auto 15px auto;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #screen-share-container video {
+    width: 100%;
+    display: block;
+  }
+  #screen-share-label {
+    background: #222;
+    padding: 4px 10px;
+    font-size: 13px;
+    text-align: left;
+  }
   .participant-tile {
     position: relative;
     width: 220px;
@@ -91,11 +112,17 @@
   </div>
 
   <div id="room-screen" style="display:none;">
+    <!-- Shown only while someone is sharing their screen -->
+    <div id="screen-share-container">
+      <div id="screen-share-label"></div>
+    </div>
+
     <div id="video-grid"></div>
 
     <div id="controls">
       <button id="mute-btn">Mute</button>
       <button id="camera-btn">Camera Off</button>
+      <button id="screen-share-btn">Share Screen</button>
       <button id="leave-btn">Leave Room</button>
     </div>
 

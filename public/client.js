@@ -24,7 +24,10 @@ const joinBtn = document.getElementById("join-btn");
 const videoGrid = document.getElementById("video-grid");
 const muteBtn = document.getElementById("mute-btn");
 const cameraBtn = document.getElementById("camera-btn");
+const screenShareBtn = document.getElementById("screen-share-btn");
 const leaveBtn = document.getElementById("leave-btn");
+const screenShareContainer = document.getElementById("screen-share-container");
+const screenShareLabel = document.getElementById("screen-share-label");
 const chatLog = document.getElementById("chat-log");
 const chatInput = document.getElementById("chat-input");
 const chatSendBtn = document.getElementById("chat-send-btn");
@@ -32,6 +35,7 @@ const chatSendBtn = document.getElementById("chat-send-btn");
 let room; // the LiveKit Room instance for this session
 let isMuted = false;
 let isCameraOff = false;
+let isScreenSharing = false;
 
 // ============================================================
 // STEP 1: Join a room
@@ -72,7 +76,7 @@ joinBtn.addEventListener("click", async () => {
 // STEP 2: Connect to the LiveKit room
 // ============================================================
 async function joinLiveKitRoom(url, token) {
-  room = new Room({    ///==> Setting the room experince
+  room = new Room({
     // Automatically adjusts received video quality per-subscriber
     // based on bandwidth and tile size — critical for a 30-person
     // room so someone on weak wifi doesn't get 29 full-res streams.
@@ -91,6 +95,13 @@ async function joinLiveKitRoom(url, token) {
 
   room.on(RoomEvent.TrackUnsubscribed, (track) => {
     track.detach().forEach((el) => el.remove());
+
+    // If the track that just ended was a screen share, hide the
+    // large display area again.
+    if (track.source === Track.Source.ScreenShare) {
+      screenShareContainer.style.display = "none";
+      screenShareLabel.textContent = "";
+    }
   });
 
   // A participant joined/left — keep the grid accurate even for
@@ -124,6 +135,18 @@ async function joinLiveKitRoom(url, token) {
     console.log("Disconnected from room");
   });
 
+  // Browsers give the user their OWN native "Stop sharing" button
+  // (usually a bar at the top of the tab/window). If they use that
+  // instead of our in-app button, this event keeps our UI in sync.
+  room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
+    if (publication.source === Track.Source.ScreenShare) {
+      isScreenSharing = false;
+      screenShareBtn.textContent = "Share Screen";
+      screenShareContainer.style.display = "none";
+      screenShareLabel.textContent = "";
+    }
+  });
+
   // ---------------- Connect ----------------
   await room.connect(url, token);
   console.log("Connected to room:", room.name);
@@ -145,8 +168,15 @@ async function joinLiveKitRoom(url, token) {
 // ============================================================
 
 // Creates (or reuses) a video/audio tile for a participant and
-// attaches the given track to it.
+// attaches the given track to it. Screen-share tracks are routed
+// to the large display area instead of the small camera grid,
+// since that's what people expect when someone presents.
 function renderTrack(track, participant) {
+  if (track.source === Track.Source.ScreenShare) {
+    renderScreenShare(track, participant);
+    return;
+  }
+
   const tileId = `tile-${participant.identity}`;
   let tile = document.getElementById(tileId);
 
@@ -175,6 +205,22 @@ function renderTrack(track, participant) {
   }
 }
 
+// Displays a screen-share track in the large area above the grid.
+// Only one screen share is shown at a time in this simple version —
+// if you need multiple simultaneous presenters, you'd extend this
+// to a small list/tab switcher instead of a single container.
+function renderScreenShare(track, participant) {
+  const el = track.attach();
+  screenShareLabel.textContent = `${participant.identity} is sharing their screen`;
+
+  // Clear any previous screen-share video element before adding the new one
+  const existingVideo = screenShareContainer.querySelector("video");
+  if (existingVideo) existingVideo.remove();
+
+  screenShareContainer.appendChild(el);
+  screenShareContainer.style.display = "block";
+}
+
 function removeParticipantTile(identity) {
   const tile = document.getElementById(`tile-${identity}`);
   if (tile) tile.remove();
@@ -199,6 +245,46 @@ leaveBtn.addEventListener("click", () => {
   if (room) room.disconnect();
   location.reload();
 });
+
+// Screen share: setScreenShareEnabled(true) triggers the browser's
+// native "choose what to share" picker (tab/window/entire screen).
+// LiveKit publishes it as a video track with source = ScreenShare,
+// which our renderTrack() function routes to the large display area
+// for every OTHER participant automatically.
+screenShareBtn.addEventListener("click", async () => {
+  try {
+    isScreenSharing = !isScreenSharing;
+
+    if (isScreenSharing) {
+      await room.localParticipant.setScreenShareEnabled(true, {
+        audio: true, // also share system/tab audio if the browser supports it
+      });
+      screenShareBtn.textContent = "Stop Sharing";
+
+      // setScreenShareEnabled doesn't hand us the track directly, so
+      // pull it from our own publications to render it locally too.
+      room.localParticipant.videoTrackPublications.forEach((pub) => {
+        if (pub.source === Track.Source.ScreenShare && pub.track) {
+          renderScreenShare(pub.track, room.localParticipant);
+        }
+      });
+    } else {
+      await room.localParticipant.setScreenShareEnabled(false);
+      screenShareBtn.textContent = "Share Screen";
+      screenShareContainer.style.display = "none";
+      screenShareLabel.textContent = "";
+    }
+  } catch (err) {
+    // Common cause: user clicked "Cancel" on the browser's share picker
+    console.warn("Screen share cancelled or failed:", err);
+    isScreenSharing = false;
+    screenShareBtn.textContent = "Share Screen";
+  }
+});
+
+// If we started sharing our OWN screen, render it locally too so we
+// can confirm what everyone else is seeing.
+
 
 // ============================================================
 // Chat over LiveKit's data channel
