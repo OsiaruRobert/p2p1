@@ -4,45 +4,114 @@
 <meta charset="UTF-8" />
 <title>ProjectPQ Study Room</title>
 <style>
+  * { box-sizing: border-box; }
   body {
-    font-family: sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: #111;
     color: #eee;
-    text-align: center;
-    padding: 20px;
     margin: 0;
+    padding: 20px;
   }
-  #join-screen { margin-top: 40px; }
-  input, button {
+  #join-screen { text-align: center; margin-top: 60px; }
+  input, button, textarea {
     padding: 8px 12px;
-    font-size: 16px;
+    font-size: 15px;
     margin: 5px;
+    font-family: inherit;
+  }
+  button {
+    cursor: pointer;
+    background: #2a2a2a;
+    color: #eee;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+  }
+  button:hover { background: #3a3a3a; }
+
+  /* ---------- Overall two-column layout: room on the left,
+     chat on the right — matches the sketch's split. ---------- */
+  #room-screen {
+    display: none;
+    max-width: 1100px;
+    margin: 0 auto;
+    gap: 20px;
+    grid-template-columns: 1fr 340px;
+  }
+  #room-screen.active { display: grid; }
+
+  /* ---------- Left side: room header + participants + video ---------- */
+  #room-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
-  /* Video grid — this is what handles 3 to 30 participants
-     without a hand-built layout. It just wraps as needed. */
+  #room-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  #room-header .room-name { font-size: 15px; color: #aaa; }
+  #room-header .room-name strong { color: #fff; }
+  #participant-count {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: #ccc;
+  }
+
+  /* ---------- Participant list: name + per-row controls ---------- */
+  #participant-list {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .participant-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .participant-row:last-child { border-bottom: none; }
+  .participant-row .p-name {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .participant-row .p-name.speaking { color: #4ade80; }
+  .row-controls { display: flex; gap: 10px; }
+  .icon-toggle {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+  .icon-toggle.muted { opacity: 0.4; }
+
+  /* ---------- Video grid + screen share (unchanged behavior) ---------- */
   #video-grid {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
-    padding: 10px;
   }
-
-  /* The shared screen gets its own large area above the camera
-     grid, since that's what people expect when someone presents. */
   #screen-share-container {
     display: none;
-    max-width: 900px;
-    margin: 0 auto 15px auto;
     background: #000;
     border-radius: 8px;
     overflow: hidden;
   }
-  #screen-share-container video {
-    width: 100%;
-    display: block;
-  }
+  #screen-share-container video { width: 100%; display: block; }
   #screen-share-label {
     background: #222;
     padding: 4px 10px;
@@ -51,21 +120,14 @@
   }
   .participant-tile {
     position: relative;
-    width: 220px;
+    width: 200px;
     background: #000;
     border-radius: 8px;
     overflow: hidden;
     border: 2px solid transparent;
   }
-  /* Highlight whoever is currently speaking — important at
-     30-person scale so people can tell who's talking. */
-  .participant-tile.speaking {
-    border-color: #4ade80;
-  }
-  .participant-tile video {
-    width: 100%;
-    display: block;
-  }
+  .participant-tile.speaking { border-color: #4ade80; }
+  .participant-tile video { width: 100%; display: block; }
   .participant-name {
     position: absolute;
     bottom: 4px;
@@ -77,60 +139,130 @@
   }
 
   #controls {
-    margin-top: 15px;
-    position: sticky;
-    bottom: 0;
-    background: #111;
-    padding: 10px;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
+  /* ---------- Right side: chat panel, matching the sketch's
+     "message" display box + "write message" + send box ---------- */
   #chat-panel {
-    max-width: 400px;
-    margin: 20px auto;
-    text-align: left;
-    background: #222;
-    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
     border-radius: 8px;
+    overflow: hidden;
+    height: fit-content;
+  }
+  #chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  #chat-header h3 { margin: 0; font-size: 14px; color: #aaa; font-weight: 600; }
+  #typing-indicator {
+    font-size: 12px;
+    color: #4ade80;
+    font-style: italic;
+    height: 16px;
   }
   #chat-log {
-    height: 150px;
+    height: 260px;
     overflow-y: auto;
-    margin-bottom: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
   }
+  #chat-log p { margin: 0 0 8px 0; line-height: 1.4; }
+  #chat-log p strong { color: #7dd3fc; }
+  #chat-compose {
+    border-top: 1px solid #2a2a2a;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #chat-compose label {
+    font-size: 12px;
+    color: #888;
+  }
+  #chat-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 60px;
+    background: #111;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    margin: 0;
+  }
+  #chat-send-btn {
+    align-self: flex-end;
+    background: #2563eb;
+    border-color: #2563eb;
+  }
+  #chat-send-btn:hover { background: #1d4ed8; }
 </style>
 </head>
 <body>
 
-  <h2>ProjectPQ Study Room</h2>
-
   <!-- Step 1: enter room name + your name. In production, name
        comes from your logged-in student session, not a text box. -->
   <div id="join-screen">
+    <h2>ProjectPQ Study Room</h2>
     <input id="room-input" placeholder="Room name (e.g. gse101-study)" />
     <input id="name-input" placeholder="Your name" />
     <button id="join-btn">Join Room</button>
   </div>
 
-  <div id="room-screen" style="display:none;">
-    <!-- Shown only while someone is sharing their screen -->
-    <div id="screen-share-container">
-      <div id="screen-share-label"></div>
+  <div id="room-screen">
+
+    <!-- ============ LEFT: room header, participants, video ============ -->
+    <div id="room-main">
+
+      <div id="room-header">
+        <div class="room-name">Current Room: <strong id="room-name-display"></strong></div>
+        <div id="participant-count">👪 <span id="participant-count-num">0</span></div>
+        <button id="join-exit-btn">Exit</button>
+      </div>
+
+      <!-- Participant list: name + per-person mute-for-me (speaker)
+           and mic status/self-mute toggle -->
+      <div id="participant-list"></div>
+
+      <!-- Shown only while someone is sharing their screen -->
+      <div id="screen-share-container">
+        <div id="screen-share-label"></div>
+      </div>
+
+      <div id="video-grid"></div>
+
+      <div id="controls">
+        <button id="mute-btn">Mute</button>
+        <button id="camera-btn">Camera Off</button>
+        <button id="screen-share-btn">Share Screen</button>
+      </div>
     </div>
 
-    <div id="video-grid"></div>
-
-    <div id="controls">
-      <button id="mute-btn">Mute</button>
-      <button id="camera-btn">Camera Off</button>
-      <button id="screen-share-btn">Share Screen</button>
-      <button id="leave-btn">Leave Room</button>
-    </div>
-
+    <!-- ============ RIGHT: chat panel ============ -->
     <div id="chat-panel">
+      <div id="chat-header">
+        <h3>Message</h3>
+        <span id="typing-indicator"></span>
+      </div>
+
       <div id="chat-log"></div>
-      <input id="chat-input" placeholder="Type a message..." />
-      <button id="chat-send-btn">Send</button>
+
+      <div id="chat-compose">
+        <label for="chat-input">Write message</label>
+        <textarea id="chat-input" placeholder="Something you want to send to people..."></textarea>
+        <button id="chat-send-btn">Send</button>
+      </div>
     </div>
+
   </div>
 
   <!-- LiveKit's client SDK, loaded as an ES module from a CDN.

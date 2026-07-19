@@ -1,18 +1,15 @@
 // ============================================================
 // client.js  (ES Module — loaded via <script type="module">)
 // -----------------------------------------------------------
-// This replaces ALL the hand-rolled RTCPeerConnection / ICE /
-// offer-answer code from the first demo. LiveKit's client SDK
-// handles the entire WebRTC connection lifecycle internally —
-// we just tell it which room to join and render whatever
-// tracks it hands us.
+// LiveKit's client SDK handles the entire WebRTC connection
+// lifecycle internally — we just tell it which room to join
+// and render whatever tracks/participants it hands us.
 // ============================================================
 
 import {
   Room,
   RoomEvent,
   Track,
-  createLocalTracks,
 } from "https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs";
 
 // -------------------- DOM references --------------------
@@ -21,21 +18,29 @@ const roomScreen = document.getElementById("room-screen");
 const roomInput = document.getElementById("room-input");
 const nameInput = document.getElementById("name-input");
 const joinBtn = document.getElementById("join-btn");
+
+const roomNameDisplay = document.getElementById("room-name-display");
+const participantCountNum = document.getElementById("participant-count-num");
+const joinExitBtn = document.getElementById("join-exit-btn");
+const participantList = document.getElementById("participant-list");
+
 const videoGrid = document.getElementById("video-grid");
 const muteBtn = document.getElementById("mute-btn");
 const cameraBtn = document.getElementById("camera-btn");
 const screenShareBtn = document.getElementById("screen-share-btn");
-const leaveBtn = document.getElementById("leave-btn");
 const screenShareContainer = document.getElementById("screen-share-container");
 const screenShareLabel = document.getElementById("screen-share-label");
+
 const chatLog = document.getElementById("chat-log");
 const chatInput = document.getElementById("chat-input");
 const chatSendBtn = document.getElementById("chat-send-btn");
+const typingIndicator = document.getElementById("typing-indicator");
 
 let room; // the LiveKit Room instance for this session
 let isMuted = false;
 let isCameraOff = false;
 let isScreenSharing = false;
+let typingTimeout = null; // debounce so we don't spam "typing" events
 
 // ============================================================
 // STEP 1: Join a room
@@ -65,7 +70,7 @@ joinBtn.addEventListener("click", async () => {
     }
 
     const { token, url } = await res.json();
-    await joinLiveKitRoom(url, token);
+    await joinLiveKitRoom(url, token, roomName);
   } catch (err) {
     alert("Could not join room: " + err.message);
     console.error(err);
@@ -75,11 +80,11 @@ joinBtn.addEventListener("click", async () => {
 // ============================================================
 // STEP 2: Connect to the LiveKit room
 // ============================================================
-async function joinLiveKitRoom(url, token) {
+async function joinLiveKitRoom(url, token, roomName) {
   room = new Room({
     // Automatically adjusts received video quality per-subscriber
-    // based on bandwidth and tile size — critical for a 30-person
-    // room so someone on weak wifi doesn't get 29 full-res streams.
+    // based on bandwidth and tile size — critical for a large
+    // room so someone on weak wifi doesn't get everyone's full-res feed.
     adaptiveStream: true,
     // Reduces publishing bandwidth/CPU by only encoding what's needed
     dynacast: true,
@@ -87,57 +92,65 @@ async function joinLiveKitRoom(url, token) {
 
   // ---------------- Event listeners ----------------
 
-  // Fired whenever ANY participant's track (ours or someone else's)
-  // becomes available to render.
   room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
     renderTrack(track, participant);
   });
 
   room.on(RoomEvent.TrackUnsubscribed, (track) => {
     track.detach().forEach((el) => el.remove());
-
-    // If the track that just ended was a screen share, hide the
-    // large display area again.
     if (track.source === Track.Source.ScreenShare) {
       screenShareContainer.style.display = "none";
       screenShareLabel.textContent = "";
     }
   });
 
-  // A participant joined/left — keep the grid accurate even for
-  // participants who haven't published a track yet (e.g. audio-only,
-  // or camera still initializing).
+  // Keep the participant list + count in sync as people come and go
+  room.on(RoomEvent.ParticipantConnected, () => refreshParticipantList());
   room.on(RoomEvent.ParticipantDisconnected, (participant) => {
     removeParticipantTile(participant.identity);
+    refreshParticipantList();
   });
 
-  // Highlights whoever is currently talking — very useful once
-  // you're past a handful of tiles.
+  // Highlights whoever is currently talking — both on video tiles
+  // and in the participant list.
   room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
-    document
-      .querySelectorAll(".participant-tile")
-      .forEach((el) => el.classList.remove("speaking"));
+    const speakingIds = new Set(speakers.map((s) => s.identity));
 
-    speakers.forEach((speaker) => {
-      const tile = document.getElementById(`tile-${speaker.identity}`);
-      if (tile) tile.classList.add("speaking");
+    document.querySelectorAll(".participant-tile").forEach((el) => {
+      el.classList.toggle("speaking", speakingIds.has(el.dataset.identity));
+    });
+    document.querySelectorAll(".participant-row").forEach((el) => {
+      el.querySelector(".p-name").classList.toggle(
+        "speaking",
+        speakingIds.has(el.dataset.identity)
+      );
     });
   });
 
-  // In-call chat, sent over LiveKit's built-in data channel —
-  // no separate Socket.io connection needed for this anymore.
+  // Chat + typing indicator both travel over LiveKit's data channel.
+  // We tag each payload with a "type" so we can tell them apart.
   room.on(RoomEvent.DataReceived, (payload, participant) => {
-    const message = new TextDecoder().decode(payload);
-    addChatMessage(`${participant.identity}: ${message}`);
+    let data;
+    try {
+      data = JSON.parse(new TextDecoder().decode(payload));
+    } catch {
+      return;
+    }
+
+    if (data.type === "chat") {
+      addChatMessage(participant.identity, data.message);
+    } else if (data.type === "typing") {
+      showTypingIndicator(participant.identity);
+    }
   });
 
   room.on(RoomEvent.Disconnected, () => {
     console.log("Disconnected from room");
   });
 
-  // Browsers give the user their OWN native "Stop sharing" button
-  // (usually a bar at the top of the tab/window). If they use that
-  // instead of our in-app button, this event keeps our UI in sync.
+  // Browsers give the user their OWN native "Stop sharing" button.
+  // If they use that instead of our in-app button, this keeps our
+  // UI in sync.
   room.on(RoomEvent.LocalTrackUnpublished, (publication) => {
     if (publication.source === Track.Source.ScreenShare) {
       isScreenSharing = false;
@@ -147,9 +160,16 @@ async function joinLiveKitRoom(url, token) {
     }
   });
 
+  // Mic mute state changes (ours or others') should refresh the
+  // little mic icon in the participant list.
+  room.on(RoomEvent.TrackMuted, () => refreshParticipantList());
+  room.on(RoomEvent.TrackUnmuted, () => refreshParticipantList());
+
   // ---------------- Connect ----------------
   await room.connect(url, token);
   console.log("Connected to room:", room.name);
+
+  roomNameDisplay.textContent = roomName;
 
   // Publish our own camera + mic
   await room.localParticipant.enableCameraAndMicrophone();
@@ -159,18 +179,113 @@ async function joinLiveKitRoom(url, token) {
     if (pub.track) renderTrack(pub.track, room.localParticipant);
   });
 
+  refreshParticipantList();
+
   joinScreen.style.display = "none";
-  roomScreen.style.display = "block";
+  roomScreen.classList.add("active");
 }
 
 // ============================================================
-// Rendering helpers
+// Participant list panel — name + per-row speaker/mic controls
 // ============================================================
 
-// Creates (or reuses) a video/audio tile for a participant and
-// attaches the given track to it. Screen-share tracks are routed
-// to the large display area instead of the small camera grid,
-// since that's what people expect when someone presents.
+// Tracks which remote participants we've locally muted (mute-for-me
+// only — does not affect what anyone else hears).
+const locallyMutedIdentities = new Set();
+
+function refreshParticipantList() {
+  if (!room) return;
+
+  const all = [room.localParticipant, ...room.remoteParticipants.values()];
+  participantCountNum.textContent = all.length;
+
+  participantList.innerHTML = "";
+
+  all.forEach((participant) => {
+    const isLocal = participant === room.localParticipant;
+    const row = document.createElement("div");
+    row.className = "participant-row";
+    row.dataset.identity = participant.identity;
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "p-name";
+    nameEl.textContent = participant.identity + (isLocal ? " (you)" : "");
+    row.appendChild(nameEl);
+
+    const controls = document.createElement("div");
+    controls.className = "row-controls";
+
+    // Speaker icon: mute THEIR audio, just for you. Doesn't apply
+    // to your own row — muting yourself is what the mic icon does.
+    if (!isLocal) {
+      const speakerBtn = document.createElement("button");
+      speakerBtn.className = "icon-toggle";
+      const isLocallyMuted = locallyMutedIdentities.has(participant.identity);
+      speakerBtn.textContent = isLocallyMuted ? "🔇" : "🔊";
+      speakerBtn.title = isLocallyMuted ? "Unmute for me" : "Mute for me";
+      speakerBtn.addEventListener("click", () => {
+        toggleLocalMuteForParticipant(participant);
+      });
+      controls.appendChild(speakerBtn);
+    }
+
+    // Mic icon: shows whether THIS person's mic is currently on.
+    // On your own row, clicking it toggles your real mic (same
+    // action as the main Mute button below).
+    const micBtn = document.createElement("button");
+    micBtn.className = "icon-toggle";
+    const micTrackPub = [...participant.audioTrackPublications.values()].find(
+      (pub) => pub.source === Track.Source.Microphone
+    );
+    const micIsOn = micTrackPub ? !micTrackPub.isMuted : false;
+    micBtn.textContent = micIsOn ? "🎙️" : "🔈🚫";
+    micBtn.title = isLocal
+      ? micIsOn
+        ? "Mute your mic"
+        : "Unmute your mic"
+      : micIsOn
+      ? "Mic is on"
+      : "Mic is off";
+
+    if (isLocal) {
+      micBtn.addEventListener("click", () => muteBtn.click());
+    } else {
+      micBtn.disabled = true; // read-only indicator for remote participants
+      micBtn.style.cursor = "default";
+    }
+    controls.appendChild(micBtn);
+
+    row.appendChild(controls);
+    participantList.appendChild(row);
+  });
+}
+
+// Mutes/unmutes a remote participant's audio locally, by muting the
+// actual <audio> element their track is attached to. This does NOT
+// affect what other participants hear — only your own browser.
+function toggleLocalMuteForParticipant(participant) {
+  const identity = participant.identity;
+  const isCurrentlyMuted = locallyMutedIdentities.has(identity);
+
+  participant.audioTrackPublications.forEach((pub) => {
+    if (pub.track) {
+      pub.track.attachedElements.forEach((el) => {
+        el.muted = !isCurrentlyMuted;
+      });
+    }
+  });
+
+  if (isCurrentlyMuted) {
+    locallyMutedIdentities.delete(identity);
+  } else {
+    locallyMutedIdentities.add(identity);
+  }
+  refreshParticipantList();
+}
+
+// ============================================================
+// Video / screen-share rendering
+// ============================================================
 function renderTrack(track, participant) {
   if (track.source === Track.Source.ScreenShare) {
     renderScreenShare(track, participant);
@@ -184,6 +299,7 @@ function renderTrack(track, participant) {
     tile = document.createElement("div");
     tile.id = tileId;
     tile.className = "participant-tile";
+    tile.dataset.identity = participant.identity;
 
     const nameLabel = document.createElement("div");
     nameLabel.className = "participant-name";
@@ -193,27 +309,24 @@ function renderTrack(track, participant) {
     videoGrid.appendChild(tile);
   }
 
-  // track.attach() returns an <audio> or <video> element already
-  // wired up to play this track — we just insert it into the DOM.
   const el = track.attach();
   if (track.kind === Track.Kind.Video) {
     tile.insertBefore(el, tile.firstChild);
   } else {
-    // Audio tracks don't need to be visible, just present so they play
     el.style.display = "none";
+    // Respect an existing local mute-for-me choice if one was made
+    // before this track arrived (e.g. reconnect scenario).
+    if (locallyMutedIdentities.has(participant.identity)) {
+      el.muted = true;
+    }
     tile.appendChild(el);
   }
 }
 
-// Displays a screen-share track in the large area above the grid.
-// Only one screen share is shown at a time in this simple version —
-// if you need multiple simultaneous presenters, you'd extend this
-// to a small list/tab switcher instead of a single container.
 function renderScreenShare(track, participant) {
   const el = track.attach();
   screenShareLabel.textContent = `${participant.identity} is sharing their screen`;
 
-  // Clear any previous screen-share video element before adding the new one
   const existingVideo = screenShareContainer.querySelector("video");
   if (existingVideo) existingVideo.remove();
 
@@ -227,12 +340,13 @@ function removeParticipantTile(identity) {
 }
 
 // ============================================================
-// Controls: mute / camera / leave
+// Controls: mute / camera / screen share / join-exit
 // ============================================================
 muteBtn.addEventListener("click", async () => {
   isMuted = !isMuted;
   await room.localParticipant.setMicrophoneEnabled(!isMuted);
   muteBtn.textContent = isMuted ? "Unmute" : "Mute";
+  refreshParticipantList();
 });
 
 cameraBtn.addEventListener("click", async () => {
@@ -241,28 +355,14 @@ cameraBtn.addEventListener("click", async () => {
   cameraBtn.textContent = isCameraOff ? "Camera On" : "Camera Off";
 });
 
-leaveBtn.addEventListener("click", () => {
-  if (room) room.disconnect();
-  location.reload();
-});
-
-// Screen share: setScreenShareEnabled(true) triggers the browser's
-// native "choose what to share" picker (tab/window/entire screen).
-// LiveKit publishes it as a video track with source = ScreenShare,
-// which our renderTrack() function routes to the large display area
-// for every OTHER participant automatically.
 screenShareBtn.addEventListener("click", async () => {
   try {
     isScreenSharing = !isScreenSharing;
 
     if (isScreenSharing) {
-      await room.localParticipant.setScreenShareEnabled(true, {
-        audio: true, // also share system/tab audio if the browser supports it
-      });
+      await room.localParticipant.setScreenShareEnabled(true, { audio: true });
       screenShareBtn.textContent = "Stop Sharing";
 
-      // setScreenShareEnabled doesn't hand us the track directly, so
-      // pull it from our own publications to render it locally too.
       room.localParticipant.videoTrackPublications.forEach((pub) => {
         if (pub.source === Track.Source.ScreenShare && pub.track) {
           renderScreenShare(pub.track, room.localParticipant);
@@ -275,41 +375,71 @@ screenShareBtn.addEventListener("click", async () => {
       screenShareLabel.textContent = "";
     }
   } catch (err) {
-    // Common cause: user clicked "Cancel" on the browser's share picker
     console.warn("Screen share cancelled or failed:", err);
     isScreenSharing = false;
     screenShareBtn.textContent = "Share Screen";
   }
 });
 
-// If we started sharing our OWN screen, render it locally too so we
-// can confirm what everyone else is seeing.
-
+// Header's Join/Exit button — since you're already in the room by
+// the time this screen shows, this button's job is to leave.
+joinExitBtn.addEventListener("click", () => {
+  if (room) room.disconnect();
+  location.reload();
+});
 
 // ============================================================
-// Chat over LiveKit's data channel
+// Chat + typing indicator, both over LiveKit's data channel
 // ============================================================
 chatSendBtn.addEventListener("click", sendChatMessage);
 chatInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendChatMessage();
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+
+// Broadcast a lightweight "typing" signal as the user types,
+// throttled so we're not sending an event on every keystroke.
+chatInput.addEventListener("input", () => {
+  if (typingTimeout) return; // already sent one recently, skip
+  sendData({ type: "typing" });
+  typingTimeout = setTimeout(() => {
+    typingTimeout = null;
+  }, 2000);
 });
 
 async function sendChatMessage() {
   const message = chatInput.value.trim();
   if (!message || !room) return;
 
-  const data = new TextEncoder().encode(message);
-  // reliable: true means it uses a guaranteed-delivery channel
-  // (like TCP) rather than best-effort — appropriate for chat text.
-  await room.localParticipant.publishData(data, { reliable: true });
-
-  addChatMessage(`You: ${message}`);
+  await sendData({ type: "chat", message });
+  addChatMessage("You", message);
   chatInput.value = "";
 }
 
-function addChatMessage(text) {
+async function sendData(data) {
+  const bytes = new TextEncoder().encode(JSON.stringify(data));
+  // reliable: true = guaranteed delivery, appropriate for chat text
+  // and typing signals (small, infrequent messages).
+  await room.localParticipant.publishData(bytes, { reliable: true });
+}
+
+function addChatMessage(sender, message) {
   const p = document.createElement("p");
-  p.textContent = text;
+  const strong = document.createElement("strong");
+  strong.textContent = sender + ": ";
+  p.appendChild(strong);
+  p.appendChild(document.createTextNode(message));
   chatLog.appendChild(p);
   chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+let typingIndicatorTimeout = null;
+function showTypingIndicator(identity) {
+  typingIndicator.textContent = `${identity} is typing...`;
+  clearTimeout(typingIndicatorTimeout);
+  typingIndicatorTimeout = setTimeout(() => {
+    typingIndicator.textContent = "";
+  }, 2500);
 }
