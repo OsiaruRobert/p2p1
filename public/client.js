@@ -72,7 +72,7 @@ joinBtn.addEventListener("click", async () => {
 // STEP 2: Connect to the LiveKit room
 // ============================================================
 async function joinLiveKitRoom(url, token) {
-  room = new Room({
+  room = new Room({    ///==> Setting the room experince
     // Automatically adjusts received video quality per-subscriber
     // based on bandwidth and tile size — critical for a 30-person
     // room so someone on weak wifi doesn't get 29 full-res streams.
